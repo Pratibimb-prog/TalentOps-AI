@@ -3,25 +3,30 @@ import json
 from pathlib import Path
 
 import pytest
+import httpx
 from fastapi import FastAPI
-from httpx import AsyncClient
 
 from app.main import app as fastapi_app
+from app.services.analysis import cached_results
 
 # Helper to create in‑memory text files
 def _make_file(content: str, filename: str = "file.txt"):
     return (filename, content.encode(), "text/plain")
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """Clear the in-memory analysis cache between tests."""
+    cached_results.clear()
+    yield
+    cached_results.clear()
 
 @pytest.fixture
 async def client():
-    async with AsyncClient(app=fastapi_app, base_url="http://testserver") as ac:
+    transport = httpx.ASGITransport(app=fastapi_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
         yield ac
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_same_documents_produce_same_analysis_id(client: AsyncClient):
     resume = _make_file("John Doe experience in python data science")
     jd = _make_file("Looking for python data science expertise")
@@ -34,7 +39,7 @@ async def test_same_documents_produce_same_analysis_id(client: AsyncClient):
     data2 = resp2.json()
     assert data1["analysis_id"] == data2["analysis_id"]
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_score_is_computed_from_data(client: AsyncClient):
     resume = _make_file("skillA skillB skillC")
     jd = _make_file("skillB skillC skillD")
@@ -47,7 +52,7 @@ async def test_score_is_computed_from_data(client: AsyncClient):
     # Overlap: skillB, skillC => 2 / 3 jd keywords = 0.666..., score ~ 6.67
     assert payload["score"] == pytest.approx(6.67, rel=1e-2)
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_changing_document_invalidates_cache(client: AsyncClient):
     # First upload
     r1 = _make_file("A B C")
@@ -63,7 +68,7 @@ async def test_changing_document_invalidates_cache(client: AsyncClient):
     resp_old = await client.get(f"/analysis/{id1}")
     assert resp_old.status_code == 404
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_roadmap_time_type(client: AsyncClient):
     resume = _make_file("python java")
     jd = _make_file("python")
@@ -77,7 +82,7 @@ async def test_roadmap_time_type(client: AsyncClient):
     for hour_key in data["roadmap"]:
         assert hour_key.startswith("hour_")
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_invalid_json_returns_clear_error(client: AsyncClient):
     # Missing required field "analysis_id"
     resp = await client.post("/score", json={})

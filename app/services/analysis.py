@@ -35,6 +35,8 @@ async def get_analysis(resume: UploadFile, job_description: UploadFile) -> Tuple
         "job_description_keywords": extract_keywords(jd_content.decode(errors="ignore")),
     }
 
+    # Invalidate any previous analysis so only the latest upload is active
+    cached_results.clear()
     cached_results[analysis_id] = payload
     return analysis_id, payload
 
