@@ -4,7 +4,9 @@ import json
 
 API_URL = "http://127.0.0.1:8000"
 
-st.title("CV Guru")
+st.set_page_config(page_title="TalentOps-AI", layout="wide")
+
+st.title("TalentOps-AI")
 
 resume_file = st.file_uploader("Upload Resume (txt)", type=["txt"])
 job_file = st.file_uploader("Upload Job Description (txt)", type=["txt"])
