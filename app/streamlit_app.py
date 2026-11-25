@@ -8,16 +8,18 @@ st.set_page_config(page_title="TalentOps-AI", layout="wide")
 
 st.title("TalentOps-AI")
 
-resume_file = st.file_uploader("Upload Resume (txt)", type=["txt"])
-job_file = st.file_uploader("Upload Job Description (txt)", type=["txt"])
+resume_file = st.file_uploader("Upload Resume (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
+job_file = st.file_uploader("Upload Job Description (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
 
 if st.button("Analyze"):
     if not resume_file or not job_file:
         st.error("Both files must be uploaded.")
     else:
+        resume_type = resume_file.type or "application/octet-stream"
+        job_type = job_file.type or "application/octet-stream"
         files = {
-            "resume": (resume_file.name, resume_file.read(), "text/plain"),
-            "job_description": (job_file.name, job_file.read(), "text/plain"),
+            "resume": (resume_file.name, resume_file.read(), resume_type),
+            "job_description": (job_file.name, job_file.read(), job_type),
         }
         try:
             resp = httpx.post(f"{API_URL}/upload", files=files, timeout=30.0)

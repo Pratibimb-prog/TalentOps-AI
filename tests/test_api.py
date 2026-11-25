@@ -1,10 +1,13 @@
 import asyncio
+import io
 import json
 from pathlib import Path
 
 import pytest
 import httpx
 from fastapi import FastAPI
+from docx import Document
+from pypdf import PdfWriter
 
 from app.main import app as fastapi_app
 from app.services.analysis import cached_results
@@ -12,6 +15,22 @@ from app.services.analysis import cached_results
 # Helper to create in‑memory text files
 def _make_file(content: str, filename: str = "file.txt"):
     return (filename, content.encode(), "text/plain")
+
+def _make_docx_file(text: str, filename: str = "doc.docx"):
+    doc = Document()
+    doc.add_paragraph(text)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return (filename, buf.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+def _make_pdf_file(text: str, filename: str = "file.pdf"):
+    # Minimal valid PDF with a text stream or object
+    # For testing, we can use pypdf or a raw text stream or PdfWriter with blank page containing text annotations/streams
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    buf = io.BytesIO()
+    writer.write(buf)
+    return (filename, buf.getvalue(), "application/pdf")
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
@@ -91,3 +110,14 @@ async def test_invalid_json_returns_clear_error(client: AsyncClient):
     # Instead, call endpoint with wrong content type
     resp2 = await client.post("/score", data="not a json")
     assert resp2.status_code == 422
+
+@pytest.mark.asyncio
+async def test_docx_and_pdf_upload(client: httpx.AsyncClient):
+    resume = _make_docx_file("experienced python fast developer", filename="resume.docx")
+    jd = _make_file("seeking python developer", filename="jd.txt")
+    files = {"resume": resume, "job_description": jd}
+    resp = await client.post("/upload", files=files)
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert "python" in data["resume_keywords"]
+    assert "developer" in data["resume_keywords"]
