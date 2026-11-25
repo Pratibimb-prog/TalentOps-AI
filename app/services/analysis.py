@@ -1,7 +1,7 @@
 import hashlib
 import io
 from pathlib import Path
-from typing import Tuple, Dict
+from typing import List, Tuple, Dict
 from fastapi import UploadFile
 from pypdf import PdfReader
 from docx import Document
@@ -38,37 +38,43 @@ def extract_text_from_bytes(content: bytes, filename: str = "") -> str:
     # Default to text decoding (txt, etc.)
     return content.decode(errors="ignore")
 
-async def get_analysis(resume: UploadFile, job_description: UploadFile) -> Tuple[str, Dict]:
-    """Read the two uploaded files, compute a deterministic analysis ID, and store a simple analysis payload.
+async def get_analysis(resumes: List[UploadFile], job_description: UploadFile) -> List[Tuple[str, Dict]]:
+    """Analyse each resume independently against a single job description.
 
-    The payload includes the raw text of both documents and a list of extracted keywords (naïve split).
+    Returns a list of (analysis_id, payload) tuples — one per resume.
+    Each analysis is cached separately so it can be scored / roadmapped on its own.
     """
-    resume_content = await _read_file(resume)
     jd_content = await _read_file(job_description)
-
-    # Create a deterministic ID based on both contents (order independent)
-    combined = resume_content + b"||" + jd_content
-    analysis_id = _hash_content(combined)
-
-    # Extract text supporting pdf, docx, and txt
-    resume_text = extract_text_from_bytes(resume_content, getattr(resume, "filename", "") or "")
     jd_text = extract_text_from_bytes(jd_content, getattr(job_description, "filename", "") or "")
 
-    # Very simple keyword extraction – split on whitespace and keep unique lower‑cased tokens longer than 3 chars
     def extract_keywords(text: str):
         return sorted({tok.lower() for tok in text.split() if len(tok) > 3})
 
-    payload = {
-        "resume_text": resume_text,
-        "job_description_text": jd_text,
-        "resume_keywords": extract_keywords(resume_text),
-        "job_description_keywords": extract_keywords(jd_text),
-    }
+    jd_keywords = extract_keywords(jd_text)
 
-    # Invalidate any previous analysis so only the latest upload is active
+    # Invalidate previous analyses so only the latest batch is active
     cached_results.clear()
-    cached_results[analysis_id] = payload
-    return analysis_id, payload
+
+    results: List[Tuple[str, Dict]] = []
+    for resume in resumes:
+        resume_content = await _read_file(resume)
+        resume_filename = getattr(resume, "filename", "") or ""
+        resume_text = extract_text_from_bytes(resume_content, resume_filename)
+
+        combined = resume_content + b"||" + jd_content
+        analysis_id = _hash_content(combined)
+
+        payload = {
+            "candidate": resume_filename,
+            "resume_text": resume_text,
+            "job_description_text": jd_text,
+            "resume_keywords": extract_keywords(resume_text),
+            "job_description_keywords": jd_keywords,
+        }
+        cached_results[analysis_id] = payload
+        results.append((analysis_id, payload))
+
+    return results
 
 def invalidate_cache(analysis_id: str) -> None:
     """Remove a cached analysis – used when documents change."""
