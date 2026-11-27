@@ -13,9 +13,12 @@ def calculate_score(data: Dict) -> Tuple[float, Dict]:
     else:
         overlap = len(resume_kws.intersection(jd_kws)) / len(jd_kws)
     score = round(overlap * 10, 2)
+    matched = resume_kws.intersection(jd_kws)
+    missing = jd_kws - resume_kws
     details = {
         "resume_keyword_count": len(resume_kws),
         "job_description_keyword_count": len(jd_kws),
-        "matched_keywords": sorted(list(resume_kws.intersection(jd_kws)))
+        "matched_keywords": sorted(list(matched)),
+        "missing_keywords": sorted(list(missing)),
     }
     return score, details
